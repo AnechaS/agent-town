@@ -244,7 +244,8 @@ export function wireGatewayClient(client: GatewayClient, refs: HandlerRefs) {
             taskSnippet: `[Sub] ${(data.label ?? "sub-task").slice(0, 28)}`,
           });
           const label = data.label ?? "sub-task";
-          gameEvents.emit("subagent-assigned", runId, runId, label);
+          const targetSeatId = "seatId" in data ? (data.seatId as string) : undefined;
+          gameEvents.emit("subagent-assigned", runId, runId, label, targetSeatId);
           refs.runActors.set(runId, label);
           dispatch()({ type: "SET_RUN_ACTOR", runId, actorName: label });
           dispatch()({
@@ -386,6 +387,17 @@ export function wireGatewayClient(client: GatewayClient, refs: HandlerRefs) {
       }
       const content = p.message?.content;
       const text = content?.find((c) => c.type === "text")?.text;
+      // Emit task-completed for the Phaser worker if lifecycle end didn't already do it.
+      // This acts as a defensive fallback — lifecycle end may not arrive (e.g. provider quirks).
+      if (!refs.seenStarts.has(runId)) {
+        // lifecycle end already fired (it deletes from seenStarts), so task-completed was emitted.
+      } else {
+        // lifecycle end didn't fire yet — emit task-completed now as fallback.
+        refs.seenStarts.delete(runId);
+        refs.bubbleAccum.delete(runId);
+        clearBubbleTimer(refs, runId);
+        gameEvents.emit("task-completed", runId);
+      }
       dispatch()({ type: "SET_SEAT_STATUS", runId, status: "done" });
       dispatch()({
         type: "UPDATE_TASK",
